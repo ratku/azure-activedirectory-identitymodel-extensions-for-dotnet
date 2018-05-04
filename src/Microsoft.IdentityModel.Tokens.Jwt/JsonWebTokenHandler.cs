@@ -36,7 +36,10 @@ using TokenLogMessages = Microsoft.IdentityModel.Tokens.LogMessages;
 
 namespace Microsoft.IdentityModel.Tokens.Jwt
 {
-    class JsonWebTokenHandler : SecurityTokenHandler
+    /// <summary>
+    /// A <see cref="SecurityTokenHandler"/> designed for creating and validating Json Web Tokens. See: http://tools.ietf.org/html/rfc7519 and http://www.rfc-editor.org/info/rfc7515
+    /// </summary>
+    public class JsonWebTokenHandler : SecurityTokenHandler
     {
         private JwtTokenUtilities _jwtTokenUtilities = new JwtTokenUtilities();
         private IDictionary<string, string> _outboundAlgorithmMap = null;
