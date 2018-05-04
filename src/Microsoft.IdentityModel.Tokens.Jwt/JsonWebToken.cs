@@ -34,7 +34,10 @@ using Newtonsoft.Json.Linq;
 
 namespace Microsoft.IdentityModel.Tokens.Jwt
 {
-    class JsonWebToken : SecurityToken
+    /// <summary>
+    /// A <see cref="SecurityToken"/> designed for representing a JSON Web Token (JWT).
+    /// </summary>
+    public class JsonWebToken : SecurityToken
     {
         /// <summary>
         /// Initializes a new instance of <see cref="JsonWebToken"/> from a string in JWS Compact serialized format.
@@ -149,6 +152,9 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
             RawAuthenticationTag = tokenParts[4];
         }
 
+        /// <summary>
+        /// Represents the cryptographic operations applied to the JWT and optionally any additional properties of the JWT. 
+        /// </summary>
         public JObject Header
         {
             get;
@@ -451,6 +457,9 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
         /// <remarks><see cref="JsonWebTokenHandler"/>.ValidateSignature(...) sets this value when a <see cref="SecurityKey"/> is used to successfully validate a signature.</remarks>
         public override SecurityKey SigningKey { get; set; }
 
+        /// <summary>
+        /// Represents the claims contained in the JWT.
+        /// </summary>
         public JObject Payload
         {
             get;

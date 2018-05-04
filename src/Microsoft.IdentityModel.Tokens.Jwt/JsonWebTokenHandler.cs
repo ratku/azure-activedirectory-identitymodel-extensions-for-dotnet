@@ -76,6 +76,9 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
             get { return typeof(JsonWebToken); }
         }
 
+        /// <summary>
+        /// Creates a JsonWebToken (JWE or JWS) asynchronously.
+        /// </summary>
         public async Task<string> CreateJsonWebTokenAsync(JObject payload, SigningCredentials signingCredentials, EncryptingCredentials encryptingCredentials)
         {
             if (payload == null)
@@ -100,6 +103,9 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
                 return rawData;
         }
 
+        /// <summary>
+        /// Creates a JWS asynchronously.
+        /// </summary>
         public async Task<string> CreateJWSAsync(JObject payload, SigningCredentials signingCredentials)
         {
             return await CreateJsonWebTokenAsync(payload, signingCredentials, null).ConfigureAwait(false);
@@ -215,6 +221,9 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
             }
         }
 
+        /// <summary>
+        /// Validates a JWS asynchronously.
+        /// </summary>
         public async Task<TokenValidationResult> ValidateJWSAsync(string token, TokenValidationParameters validationParameters)
         {
             if (string.IsNullOrEmpty(token))
@@ -232,7 +241,7 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
         }
 
         /// <summary>
-        /// Validates that the signature, if found or required, is valid.
+        /// Validates the JWT signature asynchronously.
         /// </summary>
         public async Task<JsonWebToken> ValidateSignatureAsync(string token, TokenValidationParameters validationParameters)
         {
@@ -483,11 +492,17 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
             };
         }
 
+        /// <summary>
+        /// Not implemented.
+        /// </summary>
         public override SecurityToken ReadToken(XmlReader reader, TokenValidationParameters validationParameters)
         {
             throw new NotImplementedException();
         }
 
+        /// <summary>
+        /// Not implemented.
+        /// </summary>
         public override void WriteToken(XmlWriter writer, SecurityToken token)
         {
             throw new NotImplementedException();
