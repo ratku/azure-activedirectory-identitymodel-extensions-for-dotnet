@@ -1,0 +1,69 @@
+﻿@{
+    ViewBag.Title = "S2SWebSite";
+}
+<div>
+    <h2>SignIn</h2>
+    @*<table id="signin" class="table table-bordered table-striped">*@
+    <table id="signin" class="table table-bordered left">
+        <tr>
+            <th>
+                @Html.ActionLink("Press to Play", "SignInAAD", "Home", null, new { @class = "btn btn-primary" })
+            </th>
+        </tr>
+        <tr>
+            <td>
+                <text class="text-left">User: User1@Cyrano.onmicrosoft.com Password: U1_Cyrano4$</text>
+            </td>
+        </tr>
+    </table>
+    <br />
+    <h2>Client Data</h2>
+
+    <table id="client data" class="table  table-bordered table-striped">
+        <tr>
+            <th>Host</th>
+            <th>ClientId</th>
+            <th>Logs</th>
+        </tr>
+        <tr>
+            <td>
+                <text class="text-left">https://S2SWebSite/</text>
+            </td>
+            <td>
+                <text class="text-left">@ViewBag.ClientId</text>
+            </td>
+        </tr>
+    </table>
+
+    <h2>Response from S2SMiddleTier</h2>
+    <p>@ViewBag.Response</p>
+    <p>@ViewBag.Error</p>
+
+    <h2>User Identity</h2>
+    <table id="directoryObjects" class="table table-bordered table-striped">
+        <tr>
+            <th>
+                Claim Type
+            </th>
+            <th>
+                Claim Value
+            </th>
+        </tr>
+        @{
+            if (ViewBag.Identity != null)
+            {
+                foreach (System.Security.Claims.Claim claim in ViewBag.Identity.Claims)
+                {
+                    <tr>
+                        <td>
+                            @Html.DisplayFor(modelItem => claim.Type)
+                        </td>
+                        <td>
+                            @Html.DisplayFor(modelItem => claim.Value)
+                        </td>
+                    </tr>
+                }
+            }
+        }
+    </table>
+</div>
