@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Microsoft.IdentityModel.Tokens.Jwt.Tests
+namespace AsyncCommon
 {
     public class AsyncAsymmetricSignatureProvider: AsymmetricSignatureProvider
     {
