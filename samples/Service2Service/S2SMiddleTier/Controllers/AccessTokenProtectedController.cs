@@ -10,6 +10,7 @@ using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.S2S.Tokens;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.IdentityModel.Tokens.Jwt;
+using Microsoft.IdentityModel.Tokens.Jwt.Tests;
 
 namespace S2SMiddleTier.Controllers
 {
@@ -59,7 +60,13 @@ namespace S2SMiddleTier.Controllers
             {
                 var tokenValidationParameters = new TokenValidationParameters()
                 {
-                    IssuerSigningKey = KeyingMaterial.JsonWebKeyRsa256Public
+                    ValidAudience = "http://Default.Audience.com",
+                    ValidIssuer = "http://Default.Issuer.com",
+                    IssuerSigningKey = KeyingMaterial.JsonWebKeyRsa256SigningCredentials.Key,
+                    CryptoProviderFactory = new CryptoProviderFactory()
+                    {
+                        CustomCryptoProvider = new AsyncCryptoProvider(KeyingMaterial.JsonWebKeyRsa256SigningCredentials.Key, KeyingMaterial.JsonWebKeyRsa256SigningCredentials.Algorithm, false)
+                    }
                 };
                 var tokenValidationResult = await _jsonWebTokenHandler.ValidateJWSAsync(payloadToken, tokenValidationParameters).ConfigureAwait(false);
                 var jsonWebToken = tokenValidationResult.SecurityToken as JsonWebToken;

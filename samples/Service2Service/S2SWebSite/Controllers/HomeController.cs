@@ -7,11 +7,13 @@
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.S2S.Tokens;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.IdentityModel.Tokens.Jwt;
 using Newtonsoft.Json.Linq;
+using S2SWebsite;
 using System;
 using System.Net.Http;
-using System.Security.Cryptography.X509Certificates;
+using System.Threading.Tasks;
 using System.Web.Mvc;
 
 namespace S2SWebSite.Controllers
@@ -35,9 +37,13 @@ namespace S2SWebSite.Controllers
         public const string MiddleTierClientId = "api-001";
         public const string MiddleTierEndpoint = MiddleTierAddress + "api/AccessTokenProtected/ProtectedApi";
 
-        public ActionResult Index()
+        public async Task<ActionResult> Index()
         {
             var signingCredentials = KeyingMaterial.JsonWebKeyRsa256SigningCredentials;
+            signingCredentials.CryptoProviderFactory = new CryptoProviderFactory()
+            {
+                CustomCryptoProvider = new AsyncCryptoProvider(KeyingMaterial.JsonWebKeyRsa256SigningCredentials.Key, KeyingMaterial.JsonWebKeyRsa256SigningCredentials.Algorithm, true)
+            };
 
             var payload = new JObject()
             {
@@ -49,31 +55,27 @@ namespace S2SWebSite.Controllers
                 { JwtRegisteredClaimNames.Exp, "2021-03-17T18:33:37.080Z" }
             };
 
-            var accessToken = _tokenHandler.CreateJWSAsync(payload, signingCredentials).Result;
-
+            var accessToken = await _tokenHandler.CreateJWSAsync(payload, signingCredentials).ConfigureAwait(false);
             ViewBag.ClientId = ClientId;
             ViewBag.Error = string.Empty;
             ViewBag.Response = "Signin using AzureAD.";
             ViewBag.Title = "S2SWebSite";
 
-            if (Request.IsAuthenticated)
+            try
             {
-                try
-                {
-                    var httpClient = new HttpClient();
-                    httpClient.DefaultRequestHeaders.Add(AuthenticationConstants.AuthorizationHeader, AuthenticationConstants.BearerWithSpace + accessToken);
-                    var httpResponse = httpClient.GetAsync(MiddleTierEndpoint).Result;
+                var httpClient = new HttpClient();
+                httpClient.DefaultRequestHeaders.Add(AuthenticationConstants.AuthorizationHeader, AuthenticationConstants.BearerWithSpace + accessToken);
+                var httpResponse = httpClient.GetAsync(MiddleTierEndpoint).Result;
 
-                    ViewBag.Response = httpResponse.Content.ReadAsStringAsync().Result;
-                }
-               catch (Exception ex)
-               {
-                   ViewBag.Error = ex.ToString();
-               }
-
-               ViewBag.WebAppClientId = ClientId;
-               ViewBag.Identity = HttpContext.User.Identity;
+                ViewBag.Response = httpResponse.Content.ReadAsStringAsync().Result;
             }
+            catch (Exception ex)
+            {
+                ViewBag.Error = ex.ToString();
+            }
+
+            ViewBag.WebAppClientId = ClientId;
+            ViewBag.Identity = HttpContext.User.Identity;
 
             ViewData["Name"] = "S2SWebSite";
 

@@ -121,7 +121,7 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
         private void DecodeJws(string[] tokenParts)
         {
             // Log if CTY is set, assume compact JWS
-            if (Cty != null)
+            if (Cty != String.Empty)
                 LogHelper.LogVerbose(LogHelper.FormatInvariant(LogMessages.IDX14105, Payload.Value<string>(JwtHeaderParameterNames.Cty)));
 
             try
@@ -198,7 +198,16 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
             get
             {
                 if (Payload != null)
-                    return Payload.Value<List<string>>(JwtRegisteredClaimNames.Aud) ?? new List<string>();
+                {
+                    var value = Payload.GetValue(JwtRegisteredClaimNames.Aud);
+                    var stringValue = value.ToObject<string>();
+                    if (stringValue != null)
+                        return new List<string> { stringValue };
+                    var listValue = value as IEnumerable<string>;
+                    if (listValue != null)
+                        return listValue;
+                }
+
                 return new List<string>();
             }
         }
