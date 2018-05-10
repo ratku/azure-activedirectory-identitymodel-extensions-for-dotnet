@@ -48,9 +48,6 @@ namespace AsyncWebsite.Controllers
         public const string MiddleTierAddress = "http://localhost:48273/";
         public const string MiddleTierEndpoint = MiddleTierAddress + "api/AccessTokenProtected/ProtectedApi";
 
-        // Indicates whether or not the button was clicked
-        private static bool _buttonClicked = false;
-
         public ActionResult Index()
         {
             ViewBag.Error = string.Empty;
@@ -90,8 +87,6 @@ namespace AsyncWebsite.Controllers
                 var httpResponse = await httpClient.GetAsync(MiddleTierEndpoint).ConfigureAwait(false);
 
                 ViewBag.Response = await httpResponse.Content.ReadAsStringAsync().ConfigureAwait(false);
-
-                _buttonClicked = false;
             }
             catch (Exception ex)
             {
