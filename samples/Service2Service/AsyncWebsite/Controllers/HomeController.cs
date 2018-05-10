@@ -48,7 +48,20 @@ namespace AsyncWebsite.Controllers
         public const string MiddleTierAddress = "http://localhost:48273/";
         public const string MiddleTierEndpoint = MiddleTierAddress + "api/AccessTokenProtected/ProtectedApi";
 
-        public async Task<ActionResult> Index()
+        // Indicates whether or not the button was clicked
+        private static bool _buttonClicked = false;
+
+        public ActionResult Index()
+        {
+            ViewBag.Error = string.Empty;
+            ViewBag.Response = "Token verification response has not been recieved yet.";
+            ViewBag.Title = "AsyncWebsite";
+            ViewData["Name"] = "AsyncWebsite";
+
+            return View();
+        }
+
+        public async Task<ViewResult> SendToken()
         {
             var signingCredentials = KeyingMaterial.JsonWebKeyRsa256SigningCredentials;
             signingCredentials.CryptoProviderFactory = new CryptoProviderFactory()
@@ -70,14 +83,15 @@ namespace AsyncWebsite.Controllers
             ViewBag.Error = string.Empty;
             ViewBag.Response = "Token verification response has not been recieved yet.";
             ViewBag.Title = "AsyncWebsite";
-
             try
             {
                 var httpClient = new HttpClient();
                 httpClient.DefaultRequestHeaders.Add(AuthenticationConstants.AuthorizationHeader, AuthenticationConstants.BearerWithSpace + accessToken);
-                var httpResponse = httpClient.GetAsync(MiddleTierEndpoint).Result;
+                var httpResponse = await httpClient.GetAsync(MiddleTierEndpoint).ConfigureAwait(false);
 
-                ViewBag.Response = httpResponse.Content.ReadAsStringAsync().Result;
+                ViewBag.Response = await httpResponse.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+                _buttonClicked = false;
             }
             catch (Exception ex)
             {
@@ -86,7 +100,7 @@ namespace AsyncWebsite.Controllers
 
             ViewData["Name"] = "AsyncWebsite";
 
-            return View();
+            return View("Index");
         }
     }
 }
