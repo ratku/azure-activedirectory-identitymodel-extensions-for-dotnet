@@ -28,7 +28,6 @@
 using System;
 using System.Collections.Generic;
 using System.Security.Claims;
-using System.Xml;
 using Microsoft.IdentityModel.Logging;
 using Newtonsoft.Json.Linq;
 
@@ -86,79 +85,6 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
             Header = header ?? throw LogHelper.LogArgumentNullException(nameof(header));
             Payload = payload ?? throw LogHelper.LogArgumentNullException(nameof(payload));
             RawSignature = string.Empty;
-        }
-
-        /// <summary>
-        /// Decodes the string into the header, payload and signature.
-        /// </summary>
-        /// <param name="tokenParts">the tokenized string.</param>
-        /// <param name="rawData">the original token.</param>
-        internal void Decode(string[] tokenParts, string rawData)
-        {
-            LogHelper.LogInformation(LogMessages.IDX14106, rawData);
-            try
-            {
-                Header = JObject.Parse(Base64UrlEncoder.Decode(tokenParts[0]));
-            }
-            catch (Exception ex)
-            {
-                throw LogHelper.LogExceptionMessage(new ArgumentException(LogHelper.FormatInvariant(LogMessages.IDX14102, tokenParts[0], rawData), ex));
-            }
-
-            if (tokenParts.Length == JwtConstants.JweSegmentCount)
-                DecodeJwe(tokenParts);
-            else
-                DecodeJws(tokenParts);
-
-            RawData = rawData;
-        }
-
-        /// <summary>
-        /// Decodes the payload and signature from the JWS parts.
-        /// </summary>
-        /// <param name="tokenParts">Parts of the JWS including the header.</param>
-        /// <remarks>Assumes Header has already been set.</remarks>
-        private void DecodeJws(string[] tokenParts)
-        {
-            // Log if CTY is set, assume compact JWS
-            if (Cty != String.Empty)
-                LogHelper.LogVerbose(LogHelper.FormatInvariant(LogMessages.IDX14105, Payload.Value<string>(JwtHeaderParameterNames.Cty)));
-
-            try
-            {
-                Payload = JObject.Parse(Base64UrlEncoder.Decode(tokenParts[1]));
-            }
-            catch (Exception ex)
-            {
-                throw LogHelper.LogExceptionMessage(new ArgumentException(LogHelper.FormatInvariant(LogMessages.IDX14101, tokenParts[1], RawData), ex));
-            }
-
-            RawHeader = tokenParts[0];
-            RawPayload = tokenParts[1];
-            RawSignature = tokenParts[2];
-        }
-
-        /// <summary>
-        /// Decodes the payload and signature from the JWE parts.
-        /// </summary>
-        /// <param name="tokenParts">Parts of the JWE including the header.</param>
-        /// <remarks>Assumes Header has already been set.</remarks>
-        private void DecodeJwe(string[] tokenParts)
-        {
-            RawHeader = tokenParts[0];
-            RawEncryptedKey = tokenParts[1];
-            RawInitializationVector = tokenParts[2];
-            RawCiphertext = tokenParts[3];
-            RawAuthenticationTag = tokenParts[4];
-        }
-
-        /// <summary>
-        /// Represents the cryptographic operations applied to the JWT and optionally any additional properties of the JWT. 
-        /// </summary>
-        public JObject Header
-        {
-            get;
-            set;
         }
 
         /// <summary>
@@ -251,93 +177,6 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
             }
         }
 
-        private void AddClaimsFromJToken(List<Claim> claims, string claimType, JToken jtoken, string issuer)
-        {
-            if (jtoken.Type == JTokenType.Object)
-            {
-                claims.Add(new Claim(claimType, jtoken.ToString(Newtonsoft.Json.Formatting.None), JsonClaimValueTypes.Json, issuer, issuer));
-            }
-            else if (jtoken.Type == JTokenType.Array)
-            {
-                var jarray = jtoken as JArray;
-                foreach (var item in jarray)
-                {
-                    switch (item.Type)
-                    {
-                        case JTokenType.Object:
-                            claims.Add(new Claim(claimType, item.ToString(Newtonsoft.Json.Formatting.None), JsonClaimValueTypes.Json, issuer, issuer));
-                            break;
-
-                        // only go one level deep on arrays.
-                        case JTokenType.Array:
-                            claims.Add(new Claim(claimType, item.ToString(Newtonsoft.Json.Formatting.None), JsonClaimValueTypes.JsonArray, issuer, issuer));
-                            break;
-
-                        default:
-                            AddDefaultClaimFromJToken(claims, claimType, item, issuer);
-                            break;
-                    }
-                }
-            }
-            else
-            {
-                AddDefaultClaimFromJToken(claims, claimType, jtoken, issuer);
-            }
-        }
-
-        private void AddDefaultClaimFromJToken(List<Claim> claims, string claimType, JToken jtoken, string issuer)
-        {
-            JValue jvalue = jtoken as JValue;
-            if (jvalue != null)
-            {
-                // String is special because item.ToString(Formatting.None) will result in "/"string/"". The quotes will be added.
-                // Boolean needs item.ToString otherwise 'true' => 'True'
-                if (jvalue.Type == JTokenType.String)
-                    claims.Add(new Claim(claimType, jvalue.Value.ToString(), ClaimValueTypes.String, issuer, issuer));
-                else
-                    claims.Add(new Claim(claimType, jtoken.ToString(Newtonsoft.Json.Formatting.None), GetClaimValueType(jvalue.Value), issuer, issuer));
-            }
-            else
-                claims.Add(new Claim(claimType, jtoken.ToString(Newtonsoft.Json.Formatting.None), GetClaimValueType(jtoken), issuer, issuer));
-        }
-
-        internal static string GetClaimValueType(object obj)
-        {
-            if (obj == null)
-                return JsonClaimValueTypes.JsonNull;
-
-            var objType = obj.GetType();
-
-            if (objType == typeof(string))
-                return ClaimValueTypes.String;
-
-            if (objType == typeof(int))
-                return ClaimValueTypes.Integer;
-
-            if (objType == typeof(bool))
-                return ClaimValueTypes.Boolean;
-
-            if (objType == typeof(double))
-                return ClaimValueTypes.Double;
-
-            if (objType == typeof(long))
-            {
-                long l = (long)obj;
-                if (l >= int.MinValue && l <= int.MaxValue)
-                    return ClaimValueTypes.Integer;
-
-                return ClaimValueTypes.Integer64;
-            }
-
-            if (objType == typeof(JObject))
-                return JsonClaimValueTypes.Json;
-
-            if (objType == typeof(JArray))
-                return JsonClaimValueTypes.JsonArray;
-
-            return objType.ToString();
-        }
-
         /// <summary>
         /// Gets the 'value' of the 'cty' claim { cty, 'value' }.
         /// </summary>
@@ -352,19 +191,13 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
             }
         }
 
-
         /// <summary>
-        /// Gets the 'value' of the 'iat' claim { iat, 'value' } converted to a <see cref="DateTime"/> assuming 'value' is seconds since UnixEpoch (UTC 1970-01-01T0:0:0Z).
+        /// Represents the cryptographic operations applied to the JWT and optionally any additional properties of the JWT. 
         /// </summary>
-        /// <remarks>If the 'exp' claim is not found, then <see cref="DateTime.MinValue"/> is returned.</remarks>
-        public DateTime IssuedAt
+        public JObject Header
         {
-            get
-            {
-                if (Payload != null)
-                    return Payload.Value<DateTime?>(JwtRegisteredClaimNames.Iat) ?? DateTime.MinValue;
-                return DateTime.MinValue;
-            }
+            get;
+            set;
         }
 
         /// <summary>
@@ -381,6 +214,19 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
             }
         }
 
+        /// <summary>
+        /// Gets the 'value' of the 'iat' claim { iat, 'value' } converted to a <see cref="DateTime"/> assuming 'value' is seconds since UnixEpoch (UTC 1970-01-01T0:0:0Z).
+        /// </summary>
+        /// <remarks>If the 'exp' claim is not found, then <see cref="DateTime.MinValue"/> is returned.</remarks>
+        public DateTime IssuedAt
+        {
+            get
+            {
+                if (Payload != null)
+                    return Payload.Value<DateTime?>(JwtRegisteredClaimNames.Iat) ?? DateTime.MinValue;
+                return DateTime.MinValue;
+            }
+        }
 
         /// <summary>
         /// Gets the 'value' of the 'issuer' claim { iss, 'value' }.
@@ -408,6 +254,15 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
                     return Header.Value<string>(JwtHeaderParameterNames.Kid) ?? String.Empty;
                 return String.Empty;
             }
+        }
+
+        /// <summary>
+        /// Represents the claims contained in the JWT.
+        /// </summary>
+        public JObject Payload
+        {
+            get;
+            set;
         }
 
         /// <summary>
@@ -459,21 +314,11 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
             get { return null; }
         }
 
-
         /// <summary>
         /// Gets or sets the <see cref="SecurityKey"/> that signed this instance.
         /// </summary>
         /// <remarks><see cref="JsonWebTokenHandler"/>.ValidateSignature(...) sets this value when a <see cref="SecurityKey"/> is used to successfully validate a signature.</remarks>
         public override SecurityKey SigningKey { get; set; }
-
-        /// <summary>
-        /// Represents the claims contained in the JWT.
-        /// </summary>
-        public JObject Payload
-        {
-            get;
-            set;
-        }
 
         /// <summary>
         /// Gets the 'value' of the 'sub' claim { sub, 'value' }.
@@ -545,5 +390,156 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
             }
         }
 
+        /// <summary>
+        /// Decodes the string into the header, payload and signature.
+        /// </summary>
+        /// <param name="tokenParts">the tokenized string.</param>
+        /// <param name="rawData">the original token.</param>
+        internal void Decode(string[] tokenParts, string rawData)
+        {
+            LogHelper.LogInformation(LogMessages.IDX14106, rawData);
+            try
+            {
+                Header = JObject.Parse(Base64UrlEncoder.Decode(tokenParts[0]));
+            }
+            catch (Exception ex)
+            {
+                throw LogHelper.LogExceptionMessage(new ArgumentException(LogHelper.FormatInvariant(LogMessages.IDX14102, tokenParts[0], rawData), ex));
+            }
+
+            if (tokenParts.Length == JwtConstants.JweSegmentCount)
+                DecodeJwe(tokenParts);
+            else
+                DecodeJws(tokenParts);
+
+            RawData = rawData;
+        }
+
+        private void AddClaimsFromJToken(List<Claim> claims, string claimType, JToken jtoken, string issuer)
+        {
+            if (jtoken.Type == JTokenType.Object)
+            {
+                claims.Add(new Claim(claimType, jtoken.ToString(Newtonsoft.Json.Formatting.None), JsonClaimValueTypes.Json, issuer, issuer));
+            }
+            else if (jtoken.Type == JTokenType.Array)
+            {
+                var jarray = jtoken as JArray;
+                foreach (var item in jarray)
+                {
+                    switch (item.Type)
+                    {
+                        case JTokenType.Object:
+                            claims.Add(new Claim(claimType, item.ToString(Newtonsoft.Json.Formatting.None), JsonClaimValueTypes.Json, issuer, issuer));
+                            break;
+
+                        // only go one level deep on arrays.
+                        case JTokenType.Array:
+                            claims.Add(new Claim(claimType, item.ToString(Newtonsoft.Json.Formatting.None), JsonClaimValueTypes.JsonArray, issuer, issuer));
+                            break;
+
+                        default:
+                            AddDefaultClaimFromJToken(claims, claimType, item, issuer);
+                            break;
+                    }
+                }
+            }
+            else
+            {
+                AddDefaultClaimFromJToken(claims, claimType, jtoken, issuer);
+            }
+        }
+
+        private void AddDefaultClaimFromJToken(List<Claim> claims, string claimType, JToken jtoken, string issuer)
+        {
+            JValue jvalue = jtoken as JValue;
+            if (jvalue != null)
+            {
+                // String is special because item.ToString(Formatting.None) will result in "/"string/"". The quotes will be added.
+                // Boolean needs item.ToString otherwise 'true' => 'True'
+                if (jvalue.Type == JTokenType.String)
+                    claims.Add(new Claim(claimType, jvalue.Value.ToString(), ClaimValueTypes.String, issuer, issuer));
+                else
+                    claims.Add(new Claim(claimType, jtoken.ToString(Newtonsoft.Json.Formatting.None), GetClaimValueType(jvalue.Value), issuer, issuer));
+            }
+            else
+                claims.Add(new Claim(claimType, jtoken.ToString(Newtonsoft.Json.Formatting.None), GetClaimValueType(jtoken), issuer, issuer));
+        }
+
+
+        /// <summary>
+        /// Decodes the payload and signature from the JWS parts.
+        /// </summary>
+        /// <param name="tokenParts">Parts of the JWS including the header.</param>
+        /// <remarks>Assumes Header has already been set.</remarks>
+        private void DecodeJws(string[] tokenParts)
+        {
+            // Log if CTY is set, assume compact JWS
+            if (Cty != String.Empty)
+                LogHelper.LogVerbose(LogHelper.FormatInvariant(LogMessages.IDX14105, Payload.Value<string>(JwtHeaderParameterNames.Cty)));
+
+            try
+            {
+                Payload = JObject.Parse(Base64UrlEncoder.Decode(tokenParts[1]));
+            }
+            catch (Exception ex)
+            {
+                throw LogHelper.LogExceptionMessage(new ArgumentException(LogHelper.FormatInvariant(LogMessages.IDX14101, tokenParts[1], RawData), ex));
+            }
+
+            RawHeader = tokenParts[0];
+            RawPayload = tokenParts[1];
+            RawSignature = tokenParts[2];
+        }
+
+        /// <summary>
+        /// Decodes the payload and signature from the JWE parts.
+        /// </summary>
+        /// <param name="tokenParts">Parts of the JWE including the header.</param>
+        /// <remarks>Assumes Header has already been set.</remarks>
+        private void DecodeJwe(string[] tokenParts)
+        {
+            RawHeader = tokenParts[0];
+            RawEncryptedKey = tokenParts[1];
+            RawInitializationVector = tokenParts[2];
+            RawCiphertext = tokenParts[3];
+            RawAuthenticationTag = tokenParts[4];
+        }
+
+        internal static string GetClaimValueType(object obj)
+        {
+            if (obj == null)
+                return JsonClaimValueTypes.JsonNull;
+
+            var objType = obj.GetType();
+
+            if (objType == typeof(string))
+                return ClaimValueTypes.String;
+
+            if (objType == typeof(int))
+                return ClaimValueTypes.Integer;
+
+            if (objType == typeof(bool))
+                return ClaimValueTypes.Boolean;
+
+            if (objType == typeof(double))
+                return ClaimValueTypes.Double;
+
+            if (objType == typeof(long))
+            {
+                long l = (long)obj;
+                if (l >= int.MinValue && l <= int.MaxValue)
+                    return ClaimValueTypes.Integer;
+
+                return ClaimValueTypes.Integer64;
+            }
+
+            if (objType == typeof(JObject))
+                return JsonClaimValueTypes.Json;
+
+            if (objType == typeof(JArray))
+                return JsonClaimValueTypes.JsonArray;
+
+            return objType.ToString();
+        }     
     }
 }

@@ -43,6 +43,7 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
     {
         private JwtTokenUtilities _jwtTokenUtilities = new JwtTokenUtilities();
         private IDictionary<string, string> _outboundAlgorithmMap = null;
+        private IDictionary<string, string> _headerCache = new Dictionary<string, string>();
 
         /// <summary>
         /// Default JwtHeader algorithm mapping
@@ -67,6 +68,18 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
                  { SecurityAlgorithms.RsaSha512Signature, SecurityAlgorithms.RsaSha512 },
             };
         }
+
+        /// <summary>
+        /// Gets the outbound algorithm map that is used to form the header.
+        /// </summary>
+        public IDictionary<string, string> OutboundAlgorithmMap
+        {
+            get
+            {
+                return _outboundAlgorithmMap;
+            }
+        }
+
         /// <summary>
         /// Gets the type of the <see cref="JsonWebToken"/>.
         /// </summary>
@@ -77,6 +90,14 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
         }
 
         /// <summary>
+        /// Creates a JWS asynchronously.
+        /// </summary>
+        public async Task<string> CreateJWSAsync(JObject payload, SigningCredentials signingCredentials)
+        {
+            return await CreateJsonWebTokenAsync(payload, signingCredentials, null).ConfigureAwait(false);
+        }
+
+        /// <summary>
         /// Creates a JsonWebToken (JWE or JWS) asynchronously.
         /// </summary>
         public async Task<string> CreateJsonWebTokenAsync(JObject payload, SigningCredentials signingCredentials, EncryptingCredentials encryptingCredentials)
@@ -84,14 +105,20 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
             if (payload == null)
                 throw new ArgumentNullException(nameof(payload));
 
-            var header = signingCredentials == null ? new JObject() : new JObject
+            string rawHeader;
+            if (!_headerCache.TryGetValue(GetHeaderCacheKey(signingCredentials), out rawHeader))
             {
-                { JwtHeaderParameterNames.Alg, signingCredentials.Algorithm },
-                { JwtHeaderParameterNames.Kid, signingCredentials.Key.KeyId },
-                { JwtHeaderParameterNames.Typ, JwtConstants.HeaderType }
-            };
+                var header = signingCredentials == null ? new JObject() : new JObject
+                {
+                    { JwtHeaderParameterNames.Alg, signingCredentials.Algorithm },
+                    { JwtHeaderParameterNames.Kid, signingCredentials.Key.KeyId },
+                    { JwtHeaderParameterNames.Typ, JwtConstants.HeaderType }
+                };
 
-            string rawHeader = Base64UrlEncoder.Encode(Encoding.UTF8.GetBytes(header.ToString(Newtonsoft.Json.Formatting.None)));
+                rawHeader = Base64UrlEncoder.Encode(Encoding.UTF8.GetBytes(header.ToString(Newtonsoft.Json.Formatting.None)));
+                _headerCache.Add(GetHeaderCacheKey(signingCredentials), rawHeader);
+            }
+            
             string rawPayload = Base64UrlEncoder.Encode(Encoding.UTF8.GetBytes(payload.ToString(Newtonsoft.Json.Formatting.None)));
             string rawSignature = signingCredentials == null ? string.Empty : await _jwtTokenUtilities.CreateEncodedSignatureAsync(string.Concat(rawHeader, ".", rawPayload), signingCredentials).ConfigureAwait(false);
 
@@ -104,11 +131,25 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
         }
 
         /// <summary>
-        /// Creates a JWS asynchronously.
+        /// Creates a JsonWebToken (JWE or JWS) asynchronously. Raw header value is passed in as one of the parameters for testing purposes.
         /// </summary>
-        public async Task<string> CreateJWSAsync(JObject payload, SigningCredentials signingCredentials)
+        public async Task<string> CreateJsonWebTokenAsync(JObject payload, SigningCredentials signingCredentials, EncryptingCredentials encryptingCredentials, string rawHeader)
         {
-            return await CreateJsonWebTokenAsync(payload, signingCredentials, null).ConfigureAwait(false);
+            if (payload == null)
+                throw new ArgumentNullException(nameof(payload));
+
+            if (rawHeader == null)
+                throw new ArgumentNullException(nameof(rawHeader));
+
+            string rawPayload = Base64UrlEncoder.Encode(Encoding.UTF8.GetBytes(payload.ToString(Newtonsoft.Json.Formatting.None)));
+            string rawSignature = signingCredentials == null ? string.Empty : await _jwtTokenUtilities.CreateEncodedSignatureAsync(string.Concat(rawHeader, ".", rawPayload), signingCredentials).ConfigureAwait(false);
+
+            var rawData = rawHeader + "." + rawPayload + "." + rawSignature;
+
+            if (encryptingCredentials != null)
+                return EncryptToken(rawData, encryptingCredentials);
+            else
+                return rawData;
         }
 
         private string EncryptToken(string innerJwt, EncryptingCredentials encryptingCredentials)
@@ -210,15 +251,98 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
             }
         }
 
-        /// <summary>
-        /// Gets the outbound algorithm map that is used to form the header.
-        /// </summary>
-        public IDictionary<string, string> OutboundAlgorithmMap
+        private IEnumerable<SecurityKey> GetAllSigningKeys(string token, TokenValidationParameters validationParameters)
         {
-            get
+            LogHelper.LogInformation(TokenLogMessages.IDX10243);
+            if (validationParameters.IssuerSigningKey != null)
+                yield return validationParameters.IssuerSigningKey;
+
+            if (validationParameters.IssuerSigningKeys != null)
+                foreach (SecurityKey key in validationParameters.IssuerSigningKeys)
+                    yield return key;
+        }
+
+        private string GetHeaderCacheKey(SecurityKey securityKey, string algorithm)
+        {
+            return $"{securityKey.GetType()}-{securityKey.KeyId}-{algorithm}";
+        }
+
+        private string GetHeaderCacheKey(SigningCredentials signingCredentials)
+        {
+            if (signingCredentials == null)
+                throw LogHelper.LogArgumentNullException(nameof(signingCredentials));
+
+            return GetHeaderCacheKey(signingCredentials.Key, signingCredentials.Algorithm);
+        }
+
+        /// <summary>
+        /// Returns a <see cref="SecurityKey"/> to use when validating the signature of a token.
+        /// </summary>
+        /// <param name="token">The <see cref="string"/> representation of the token that is being validated.</param>
+        /// <param name="jwtToken">The <see cref="JsonWebToken"/> that is being validated.</param>
+        /// <param name="validationParameters">A <see cref="TokenValidationParameters"/>  required for validation.</param>
+        /// <returns>Returns a <see cref="SecurityKey"/> to use for signature validation.</returns>
+        /// <remarks>If key fails to resolve, then null is returned</remarks>
+        protected virtual SecurityKey ResolveIssuerSigningKey(string token, JsonWebToken jwtToken, TokenValidationParameters validationParameters)
+        {
+            if (validationParameters == null)
+                throw LogHelper.LogArgumentNullException(nameof(validationParameters));
+
+            if (jwtToken == null)
+                throw LogHelper.LogArgumentNullException(nameof(jwtToken));
+
+            if (!string.IsNullOrEmpty(jwtToken.Kid))
             {
-                return _outboundAlgorithmMap;
+                string kid = jwtToken.Kid;
+                if (validationParameters.IssuerSigningKey != null && string.Equals(validationParameters.IssuerSigningKey.KeyId, kid, StringComparison.Ordinal))
+                    return validationParameters.IssuerSigningKey;
+
+                if (validationParameters.IssuerSigningKeys != null)
+                {
+                    foreach (SecurityKey signingKey in validationParameters.IssuerSigningKeys)
+                    {
+                        if (signingKey != null && string.Equals(signingKey.KeyId, kid, StringComparison.Ordinal))
+                        {
+                            return signingKey;
+                        }
+                    }
+                }
             }
+
+            if (!string.IsNullOrEmpty(jwtToken.X5t))
+            {
+                string x5t = jwtToken.X5t;
+                if (validationParameters.IssuerSigningKey != null)
+                {
+                    if (string.Equals(validationParameters.IssuerSigningKey.KeyId, x5t, StringComparison.Ordinal))
+                        return validationParameters.IssuerSigningKey;
+
+                    X509SecurityKey x509Key = validationParameters.IssuerSigningKey as X509SecurityKey;
+                    if (x509Key != null && string.Equals(x509Key.X5t, x5t, StringComparison.Ordinal))
+                        return validationParameters.IssuerSigningKey;
+                }
+
+                if (validationParameters.IssuerSigningKeys != null)
+                {
+                    foreach (SecurityKey signingKey in validationParameters.IssuerSigningKeys)
+                    {
+                        if (signingKey != null && string.Equals(signingKey.KeyId, x5t, StringComparison.Ordinal))
+                        {
+                            return signingKey;
+                        }
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Not implemented.
+        /// </summary>
+        public override SecurityToken ReadToken(XmlReader reader, TokenValidationParameters validationParameters)
+        {
+            throw new NotImplementedException();
         }
 
         /// <summary>
@@ -362,81 +486,8 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
                 throw LogHelper.LogExceptionMessage(new SecurityTokenInvalidSignatureException(LogHelper.FormatInvariant(TokenLogMessages.IDX10503, keysAttempted, exceptionStrings, jwtToken)));
 
             throw LogHelper.LogExceptionMessage(new SecurityTokenInvalidSignatureException(TokenLogMessages.IDX10500));
-        }
-
-        /// <summary>
-        /// Returns a <see cref="SecurityKey"/> to use when validating the signature of a token.
-        /// </summary>
-        /// <param name="token">The <see cref="string"/> representation of the token that is being validated.</param>
-        /// <param name="jwtToken">The <see cref="JsonWebToken"/> that is being validated.</param>
-        /// <param name="validationParameters">A <see cref="TokenValidationParameters"/>  required for validation.</param>
-        /// <returns>Returns a <see cref="SecurityKey"/> to use for signature validation.</returns>
-        /// <remarks>If key fails to resolve, then null is returned</remarks>
-        protected virtual SecurityKey ResolveIssuerSigningKey(string token, JsonWebToken jwtToken, TokenValidationParameters validationParameters)
-        {
-            if (validationParameters == null)
-                throw LogHelper.LogArgumentNullException(nameof(validationParameters));
-
-            if (jwtToken == null)
-                throw LogHelper.LogArgumentNullException(nameof(jwtToken));
-
-            if (!string.IsNullOrEmpty(jwtToken.Kid))
-            {
-                string kid = jwtToken.Kid;
-                if (validationParameters.IssuerSigningKey != null && string.Equals(validationParameters.IssuerSigningKey.KeyId, kid, StringComparison.Ordinal))
-                    return validationParameters.IssuerSigningKey;
-
-                if (validationParameters.IssuerSigningKeys != null)
-                {
-                    foreach (SecurityKey signingKey in validationParameters.IssuerSigningKeys)
-                    {
-                        if (signingKey != null && string.Equals(signingKey.KeyId, kid, StringComparison.Ordinal))
-                        {
-                            return signingKey;
-                        }
-                    }
-                }
-            }
-
-            if (!string.IsNullOrEmpty(jwtToken.X5t))
-            {
-                string x5t = jwtToken.X5t;
-                if (validationParameters.IssuerSigningKey != null)
-                {
-                    if (string.Equals(validationParameters.IssuerSigningKey.KeyId, x5t, StringComparison.Ordinal))
-                        return validationParameters.IssuerSigningKey;
-
-                    X509SecurityKey x509Key = validationParameters.IssuerSigningKey as X509SecurityKey;
-                    if (x509Key != null && string.Equals(x509Key.X5t, x5t, StringComparison.Ordinal))
-                        return validationParameters.IssuerSigningKey;
-                }
-
-                if (validationParameters.IssuerSigningKeys != null)
-                {
-                    foreach (SecurityKey signingKey in validationParameters.IssuerSigningKeys)
-                    {
-                        if (signingKey != null && string.Equals(signingKey.KeyId, x5t, StringComparison.Ordinal))
-                        {
-                            return signingKey;
-                        }
-                    }
-                }
-            }
-
-            return null;
-        }
-
-        private IEnumerable<SecurityKey> GetAllSigningKeys(string token, TokenValidationParameters validationParameters)
-        {
-            LogHelper.LogInformation(TokenLogMessages.IDX10243);
-            if (validationParameters.IssuerSigningKey != null)
-                yield return validationParameters.IssuerSigningKey;
-
-            if (validationParameters.IssuerSigningKeys != null)
-                foreach (SecurityKey key in validationParameters.IssuerSigningKeys)
-                    yield return key;
-        }
-
+        }      
+     
         /// <summary>
         /// Obtains a <see cref="SignatureProvider "/> and validates the signature.
         /// </summary>
@@ -490,14 +541,6 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
             {
                 SecurityToken = jwtToken
             };
-        }
-
-        /// <summary>
-        /// Not implemented.
-        /// </summary>
-        public override SecurityToken ReadToken(XmlReader reader, TokenValidationParameters validationParameters)
-        {
-            throw new NotImplementedException();
         }
 
         /// <summary>
