@@ -98,6 +98,14 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
         }
 
         /// <summary>
+        /// Creates a JWS.
+        /// </summary>
+        public string CreateJWS(JObject payload, SigningCredentials signingCredentials)
+        {
+            return CreateJsonWebToken(payload, signingCredentials, null);
+        }
+
+        /// <summary>
         /// Creates a JsonWebToken (JWE or JWS) asynchronously.
         /// </summary>
         public async Task<string> CreateJsonWebTokenAsync(JObject payload, SigningCredentials signingCredentials, EncryptingCredentials encryptingCredentials)
@@ -131,6 +139,39 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
         }
 
         /// <summary>
+        /// Creates a JsonWebToken (JWE or JWS).
+        /// </summary>
+        public string CreateJsonWebToken(JObject payload, SigningCredentials signingCredentials, EncryptingCredentials encryptingCredentials)
+        {
+            if (payload == null)
+                throw new ArgumentNullException(nameof(payload));
+
+            string rawHeader;
+            if (!_headerCache.TryGetValue(GetHeaderCacheKey(signingCredentials), out rawHeader))
+            {
+                var header = signingCredentials == null ? new JObject() : new JObject
+                {
+                    { JwtHeaderParameterNames.Alg, signingCredentials.Algorithm },
+                    { JwtHeaderParameterNames.Kid, signingCredentials.Key.KeyId },
+                    { JwtHeaderParameterNames.Typ, JwtConstants.HeaderType }
+                };
+
+                rawHeader = Base64UrlEncoder.Encode(Encoding.UTF8.GetBytes(header.ToString(Newtonsoft.Json.Formatting.None)));
+                _headerCache.Add(GetHeaderCacheKey(signingCredentials), rawHeader);
+            }
+
+            string rawPayload = Base64UrlEncoder.Encode(Encoding.UTF8.GetBytes(payload.ToString(Newtonsoft.Json.Formatting.None)));
+            string rawSignature = signingCredentials == null ? string.Empty : JwtTokenUtilities.CreateEncodedSignature(string.Concat(rawHeader, ".", rawPayload), signingCredentials);
+
+            var rawData = rawHeader + "." + rawPayload + "." + rawSignature;
+
+            if (encryptingCredentials != null)
+                return EncryptToken(rawData, encryptingCredentials);
+            else
+                return rawData;
+        }
+
+        /// <summary>
         /// Creates a JsonWebToken (JWE or JWS) asynchronously. Raw header value is passed in as one of the parameters for testing purposes.
         /// </summary>
         public async Task<string> CreateJsonWebTokenAsync(JObject payload, SigningCredentials signingCredentials, EncryptingCredentials encryptingCredentials, string rawHeader)
@@ -143,6 +184,28 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
 
             string rawPayload = Base64UrlEncoder.Encode(Encoding.UTF8.GetBytes(payload.ToString(Newtonsoft.Json.Formatting.None)));
             string rawSignature = signingCredentials == null ? string.Empty : await _jwtTokenUtilities.CreateEncodedSignatureAsync(string.Concat(rawHeader, ".", rawPayload), signingCredentials).ConfigureAwait(false);
+
+            var rawData = rawHeader + "." + rawPayload + "." + rawSignature;
+
+            if (encryptingCredentials != null)
+                return EncryptToken(rawData, encryptingCredentials);
+            else
+                return rawData;
+        }
+
+        /// <summary>
+        /// Creates a JsonWebToken (JWE or JWS). Raw header value is passed in as one of the parameters for testing purposes.
+        /// </summary>
+        public string CreateJsonWebToken(JObject payload, SigningCredentials signingCredentials, EncryptingCredentials encryptingCredentials, string rawHeader)
+        {
+            if (payload == null)
+                throw new ArgumentNullException(nameof(payload));
+
+            if (rawHeader == null)
+                throw new ArgumentNullException(nameof(rawHeader));
+
+            string rawPayload = Base64UrlEncoder.Encode(Encoding.UTF8.GetBytes(payload.ToString(Newtonsoft.Json.Formatting.None)));
+            string rawSignature = signingCredentials == null ? string.Empty : JwtTokenUtilities.CreateEncodedSignature(string.Concat(rawHeader, ".", rawPayload), signingCredentials);
 
             var rawData = rawHeader + "." + rawPayload + "." + rawSignature;
 
