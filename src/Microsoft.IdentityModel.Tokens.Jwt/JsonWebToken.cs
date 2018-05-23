@@ -50,27 +50,25 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
         /// </remarks>
         public JsonWebToken(string jwtEncodedString)
         {
-            if (string.IsNullOrWhiteSpace(jwtEncodedString))
-                throw LogHelper.LogArgumentNullException(nameof(jwtEncodedString));
+            if (string.IsNullOrEmpty(jwtEncodedString))
+                throw new ArgumentNullException(nameof(jwtEncodedString));
 
-            // Set the maximum number of segments to MaxJwtSegmentCount + 1. This controls the number of splits and allows detecting the number of segments is too large.
-            // For example: "a.b.c.d.e.f.g.h" => [a], [b], [c], [d], [e], [f.g.h]. 6 segments.
-            // If just MaxJwtSegmentCount was used, then [a], [b], [c], [d], [e.f.g.h] would be returned. 5 segments.
-            string[] tokenParts = jwtEncodedString.Split(new char[] { '.' }, JwtConstants.MaxJwtSegmentCount + 1);
-            if (tokenParts.Length == JwtConstants.JwsSegmentCount)
+            int count = 0;
+            int next = -1;
+            while ((next = jwtEncodedString.IndexOf('.', next + 1)) != -1)
             {
-                if (!JwtTokenUtilities.RegexJws.IsMatch(jwtEncodedString))
-                    throw LogHelper.LogExceptionMessage(new ArgumentException(LogHelper.FormatInvariant(LogMessages.IDX14100, jwtEncodedString)));
+                count++;
+                if (count > 5)
+                    break;
             }
-            else if (tokenParts.Length == JwtConstants.JweSegmentCount)
+
+            // JWS or JWE
+            if (count == 2 || count == 5)
             {
-                if (!JwtTokenUtilities.RegexJwe.IsMatch(jwtEncodedString))
-                    throw LogHelper.LogExceptionMessage(new ArgumentException(LogHelper.FormatInvariant(LogMessages.IDX14100, jwtEncodedString)));
-            }
-            else
+                var tokenParts = jwtEncodedString.Split('.');
+                Decode(tokenParts, jwtEncodedString);
+            } else
                 throw LogHelper.LogExceptionMessage(new ArgumentException(LogHelper.FormatInvariant(LogMessages.IDX14100, jwtEncodedString)));
-
-            Decode(tokenParts, jwtEncodedString);
         }
 
         /// <summary>
@@ -398,15 +396,21 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
         internal void Decode(string[] tokenParts, string rawData)
         {
             LogHelper.LogInformation(LogMessages.IDX14106, rawData);
-            try
+            if (!JsonWebTokenManager.RawHeaderToJObjectCache.TryGetValue(tokenParts[0], out var header))
             {
-                Header = JObject.Parse(Base64UrlEncoder.Decode(tokenParts[0]));
+                try
+                {
+                    Header = JObject.Parse(Base64UrlEncoder.Decode(tokenParts[0]));
+                    JsonWebTokenManager.RawHeaderToJObjectCache.TryAdd(tokenParts[0], Header);
+                }
+                catch (Exception ex)
+                {
+                    throw LogHelper.LogExceptionMessage(new ArgumentException(LogHelper.FormatInvariant(LogMessages.IDX14102, tokenParts[0], rawData), ex));
+                }
             }
-            catch (Exception ex)
-            {
-                throw LogHelper.LogExceptionMessage(new ArgumentException(LogHelper.FormatInvariant(LogMessages.IDX14102, tokenParts[0], rawData), ex));
-            }
-
+            else
+                Header = header;
+           
             if (tokenParts.Length == JwtConstants.JweSegmentCount)
                 DecodeJwe(tokenParts);
             else

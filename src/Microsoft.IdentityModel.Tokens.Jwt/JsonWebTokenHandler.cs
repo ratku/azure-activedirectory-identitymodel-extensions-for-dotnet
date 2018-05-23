@@ -30,6 +30,7 @@ using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Xml;
 using TokenLogMessages = Microsoft.IdentityModel.Tokens.LogMessages;
@@ -43,7 +44,6 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
     {
         private JwtTokenUtilities _jwtTokenUtilities = new JwtTokenUtilities();
         private IDictionary<string, string> _outboundAlgorithmMap = null;
-        private IDictionary<string, string> _headerCache = new Dictionary<string, string>();
 
         /// <summary>
         /// Default JwtHeader algorithm mapping
@@ -90,6 +90,49 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
         }
 
         /// <summary>
+        /// Determines if the string is a well formed Json Web Token (JWT).
+        /// <para>see: http://tools.ietf.org/html/rfc7519 </para>
+        /// </summary>
+        /// <param name="token">String that should represent a valid JWT.</param>
+        /// <remarks>Uses <see cref="Regex.IsMatch(string, string)"/> matching one of:
+        /// <para>JWS: @"^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]*$"</para>
+        /// <para>JWE: (dir): @"^[A-Za-z0-9-_]+\.\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]*$"</para>
+        /// <para>JWE: (wrappedkey): @"^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]$"</para>
+        /// </remarks>
+        /// <returns>
+        /// <para>'false' if the token is null or whitespace.</para>
+        /// <para>'false' if token.Length * 2 >  <see cref="SecurityTokenHandler.MaximumTokenSizeInBytes"/>.</para>
+        /// <para>'true' if the token is in JSON compact serialization format.</para>
+        /// </returns>
+        public override bool CanReadToken(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token))
+                return false;
+
+            if (token.Length * 2 > MaximumTokenSizeInBytes)
+            {
+                LogHelper.LogInformation(TokenLogMessages.IDX10209, token.Length, MaximumTokenSizeInBytes);
+                return false;
+            }
+
+            // Set the maximum number of segments to MaxJwtSegmentCount + 1. This controls the number of splits and allows detecting the number of segments is too large.
+            // For example: "a.b.c.d.e.f.g.h" => [a], [b], [c], [d], [e], [f.g.h]. 6 segments.
+            // If just MaxJwtSegmentCount was used, then [a], [b], [c], [d], [e.f.g.h] would be returned. 5 segments.
+            string[] tokenParts = token.Split(new char[] { '.' }, JwtConstants.MaxJwtSegmentCount + 1);
+            if (tokenParts.Length == JwtConstants.JwsSegmentCount)
+            {
+                return JwtTokenUtilities.RegexJws.IsMatch(token);
+            }
+            else if (tokenParts.Length == JwtConstants.JweSegmentCount)
+            {
+                return JwtTokenUtilities.RegexJwe.IsMatch(token);
+            }
+
+            LogHelper.LogInformation(LogMessages.IDX14107);
+            return false;
+        }
+
+        /// <summary>
         /// Creates a JWS asynchronously.
         /// </summary>
         public async Task<string> CreateJWSAsync(JObject payload, SigningCredentials signingCredentials)
@@ -114,7 +157,7 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
                 throw new ArgumentNullException(nameof(payload));
 
             string rawHeader;
-            if (!_headerCache.TryGetValue(GetHeaderCacheKey(signingCredentials), out rawHeader))
+            if (!JsonWebTokenManager.KeyToHeaderCache.TryGetValue(JsonWebTokenManager.GetHeaderCacheKey(signingCredentials), out rawHeader))
             {
                 var header = signingCredentials == null ? new JObject() : new JObject
                 {
@@ -124,7 +167,7 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
                 };
 
                 rawHeader = Base64UrlEncoder.Encode(Encoding.UTF8.GetBytes(header.ToString(Newtonsoft.Json.Formatting.None)));
-                _headerCache.Add(GetHeaderCacheKey(signingCredentials), rawHeader);
+                JsonWebTokenManager.KeyToHeaderCache.TryAdd(JsonWebTokenManager.GetHeaderCacheKey(signingCredentials), rawHeader);
             }
             
             string rawPayload = Base64UrlEncoder.Encode(Encoding.UTF8.GetBytes(payload.ToString(Newtonsoft.Json.Formatting.None)));
@@ -147,7 +190,7 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
                 throw new ArgumentNullException(nameof(payload));
 
             string rawHeader;
-            if (!_headerCache.TryGetValue(GetHeaderCacheKey(signingCredentials), out rawHeader))
+            if (!JsonWebTokenManager.KeyToHeaderCache.TryGetValue(JsonWebTokenManager.GetHeaderCacheKey(signingCredentials), out rawHeader))
             {
                 var header = signingCredentials == null ? new JObject() : new JObject
                 {
@@ -157,7 +200,7 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
                 };
 
                 rawHeader = Base64UrlEncoder.Encode(Encoding.UTF8.GetBytes(header.ToString(Newtonsoft.Json.Formatting.None)));
-                _headerCache.Add(GetHeaderCacheKey(signingCredentials), rawHeader);
+                JsonWebTokenManager.KeyToHeaderCache.TryAdd(JsonWebTokenManager.GetHeaderCacheKey(signingCredentials), rawHeader);
             }
 
             string rawPayload = Base64UrlEncoder.Encode(Encoding.UTF8.GetBytes(payload.ToString(Newtonsoft.Json.Formatting.None)));
@@ -325,19 +368,6 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
                     yield return key;
         }
 
-        private string GetHeaderCacheKey(SecurityKey securityKey, string algorithm)
-        {
-            return $"{securityKey.GetType()}-{securityKey.KeyId}-{algorithm}";
-        }
-
-        private string GetHeaderCacheKey(SigningCredentials signingCredentials)
-        {
-            if (signingCredentials == null)
-                throw LogHelper.LogArgumentNullException(nameof(signingCredentials));
-
-            return GetHeaderCacheKey(signingCredentials.Key, signingCredentials.Algorithm);
-        }
-
         /// <summary>
         /// Returns a <see cref="SecurityKey"/> to use when validating the signature of a token.
         /// </summary>
@@ -398,6 +428,40 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Converts a string into an instance of <see cref="JsonWebToken"/>.
+        /// </summary>
+        /// <param name="token">A 'JSON Web Token' (JWT) in JWS or JWE Compact Serialization Format.</param>
+        /// <returns>A <see cref="JsonWebToken"/></returns>
+        /// <exception cref="ArgumentNullException">'token' is null or empty.</exception>
+        /// <exception cref="ArgumentException">'token.Length' > <see cref="SecurityTokenHandler.MaximumTokenSizeInBytes"/>.</exception>
+        /// <remarks><para>If the 'token' is in JWE Compact Serialization format, only the protected header will be deserialized.</para>
+        /// This method is unable to decrypt the payload. Use <see cref="ValidateJWSAsync(string, TokenValidationParameters)"/>to obtain the payload.</remarks>
+        public JsonWebToken ReadJsonWebToken(string token)
+        {
+            if (string.IsNullOrEmpty(token))
+                throw LogHelper.LogArgumentNullException(nameof(token));
+
+            if (token.Length > MaximumTokenSizeInBytes)
+                throw LogHelper.LogExceptionMessage(new ArgumentException(LogHelper.FormatInvariant(TokenLogMessages.IDX10209, token.Length, MaximumTokenSizeInBytes)));
+
+            return new JsonWebToken(token);
+        }
+
+        /// <summary>
+        /// Converts a string into an instance of <see cref="JsonWebToken"/>.
+        /// </summary>
+        /// <param name="token">A 'JSON Web Token' (JWT) in JWS or JWE Compact Serialization Format.</param>
+        /// <returns>A <see cref="JsonWebToken"/></returns>
+        /// <exception cref="ArgumentNullException">'token' is null or empty.</exception>
+        /// <exception cref="ArgumentException">'token.Length * 2' > <see cref="SecurityTokenHandler.MaximumTokenSizeInBytes"/>.</exception>
+        /// <remarks><para>If the 'token' is in JWE Compact Serialization format, only the protected header will be deserialized.</para>
+        /// This method is unable to decrypt the payload. Use <see cref="ValidateJWSAsync(string, TokenValidationParameters)"/>to obtain the payload.</remarks>
+        public override SecurityToken ReadToken(string token)
+        {
+            return ReadJsonWebToken(token);
         }
 
         /// <summary>
