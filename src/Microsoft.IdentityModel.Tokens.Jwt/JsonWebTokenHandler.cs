@@ -43,42 +43,6 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
     public class JsonWebTokenHandler : SecurityTokenHandler
     {
         private JwtTokenUtilities _jwtTokenUtilities = new JwtTokenUtilities();
-        private IDictionary<string, string> _outboundAlgorithmMap = null;
-
-        /// <summary>
-        /// Default JwtHeader algorithm mapping
-        /// </summary>
-        public static IDictionary<string, string> DefaultOutboundAlgorithmMap;
-     
-        /// <summary>
-        /// Static initializer for a new object. Static initializers run before the first instance of the type is created.
-        /// </summary>
-        static JsonWebTokenHandler()
-        {
-            DefaultOutboundAlgorithmMap = new Dictionary<string, string>
-            {
-                 { SecurityAlgorithms.EcdsaSha256Signature, SecurityAlgorithms.EcdsaSha256 },
-                 { SecurityAlgorithms.EcdsaSha384Signature, SecurityAlgorithms.EcdsaSha384 },
-                 { SecurityAlgorithms.EcdsaSha512Signature, SecurityAlgorithms.EcdsaSha512 },
-                 { SecurityAlgorithms.HmacSha256Signature, SecurityAlgorithms.HmacSha256 },
-                 { SecurityAlgorithms.HmacSha384Signature, SecurityAlgorithms.HmacSha384 },
-                 { SecurityAlgorithms.HmacSha512Signature, SecurityAlgorithms.HmacSha512 },
-                 { SecurityAlgorithms.RsaSha256Signature, SecurityAlgorithms.RsaSha256 },
-                 { SecurityAlgorithms.RsaSha384Signature, SecurityAlgorithms.RsaSha384 },
-                 { SecurityAlgorithms.RsaSha512Signature, SecurityAlgorithms.RsaSha512 },
-            };
-        }
-
-        /// <summary>
-        /// Gets the outbound algorithm map that is used to form the header.
-        /// </summary>
-        public IDictionary<string, string> OutboundAlgorithmMap
-        {
-            get
-            {
-                return _outboundAlgorithmMap;
-            }
-        }
 
         /// <summary>
         /// Gets the type of the <see cref="JsonWebToken"/>.
@@ -272,15 +236,11 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
                     throw LogHelper.LogExceptionMessage(new SecurityTokenEncryptionFailedException(LogHelper.FormatInvariant(TokenLogMessages.IDX10615, encryptingCredentials.Enc, encryptingCredentials.Key)));
 
                 var header = new JObject();
-                string outboundAlg;
-                if (OutboundAlgorithmMap != null && OutboundAlgorithmMap.TryGetValue(encryptingCredentials.Alg, out outboundAlg))
-                    header.Add(JwtHeaderParameterNames.Alg, outboundAlg);
-                else
+
+                if (!string.IsNullOrEmpty(encryptingCredentials.Alg))
                     header.Add(JwtHeaderParameterNames.Alg, encryptingCredentials.Alg);
 
-                if (OutboundAlgorithmMap != null && OutboundAlgorithmMap.TryGetValue(encryptingCredentials.Enc, out outboundAlg))
-                    header.Add(JwtHeaderParameterNames.Enc, outboundAlg);
-                else
+                if (!string.IsNullOrEmpty(encryptingCredentials.Enc))
                     header.Add(JwtHeaderParameterNames.Enc, encryptingCredentials.Enc);
 
                 if (!string.IsNullOrEmpty(encryptingCredentials.Key.KeyId))
@@ -330,15 +290,11 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
                 try
                 {
                     var header = new JObject();
-                    string outboundAlg;
-                    if (OutboundAlgorithmMap != null && OutboundAlgorithmMap.TryGetValue(encryptingCredentials.Alg, out outboundAlg))
-                        header.Add(JwtHeaderParameterNames.Alg, outboundAlg);
-                    else
+
+                    if (!string.IsNullOrEmpty(encryptingCredentials.Alg))
                         header.Add(JwtHeaderParameterNames.Alg, encryptingCredentials.Alg);
 
-                    if (OutboundAlgorithmMap != null && OutboundAlgorithmMap.TryGetValue(encryptingCredentials.Enc, out outboundAlg))
-                        header.Add(JwtHeaderParameterNames.Enc, outboundAlg);
-                    else
+                    if (!string.IsNullOrEmpty(encryptingCredentials.Enc))
                         header.Add(JwtHeaderParameterNames.Enc, encryptingCredentials.Enc);
 
                     if (!string.IsNullOrEmpty(encryptingCredentials.Key.KeyId))
