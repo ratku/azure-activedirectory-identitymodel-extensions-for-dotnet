@@ -394,7 +394,7 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
         /// <exception cref="ArgumentNullException">'token' is null or empty.</exception>
         /// <exception cref="ArgumentException">'token.Length' > <see cref="SecurityTokenHandler.MaximumTokenSizeInBytes"/>.</exception>
         /// <remarks><para>If the 'token' is in JWE Compact Serialization format, only the protected header will be deserialized.</para>
-        /// This method is unable to decrypt the payload. Use <see cref="ValidateJWSAsync(string, TokenValidationParameters)"/>to obtain the payload.</remarks>
+        /// This method is unable to decrypt the payload. Use <see cref="ValidateAsync(string, TokenValidationParameters)"/>to obtain the payload.</remarks>
         public JsonWebToken ReadJsonWebToken(string token)
         {
             if (string.IsNullOrEmpty(token))
@@ -414,7 +414,7 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
         /// <exception cref="ArgumentNullException">'token' is null or empty.</exception>
         /// <exception cref="ArgumentException">'token.Length * 2' > <see cref="SecurityTokenHandler.MaximumTokenSizeInBytes"/>.</exception>
         /// <remarks><para>If the 'token' is in JWE Compact Serialization format, only the protected header will be deserialized.</para>
-        /// This method is unable to decrypt the payload. Use <see cref="ValidateJWSAsync(string, TokenValidationParameters)"/>to obtain the payload.</remarks>
+        /// This method is unable to decrypt the payload. Use <see cref="ValidateAsync(string, TokenValidationParameters)"/>to obtain the payload.</remarks>
         public override SecurityToken ReadToken(string token)
         {
             return ReadJsonWebToken(token);
@@ -431,7 +431,7 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
         /// <summary>
         /// Validates a JWS asynchronously.
         /// </summary>
-        public async Task<TokenValidationResult> ValidateJWSAsync(string token, TokenValidationParameters validationParameters)
+        public async Task<TokenValidationResult> ValidateAsync(string token, TokenValidationParameters validationParameters)
         {
             if (string.IsNullOrEmpty(token))
                 throw new ArgumentNullException(nameof(token));
@@ -450,7 +450,7 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
         /// <summary>
         /// Validates the JWT signature asynchronously.
         /// </summary>
-        public async Task<JsonWebToken> ValidateSignatureAsync(string token, TokenValidationParameters validationParameters)
+        private async Task<JsonWebToken> ValidateSignatureAsync(string token, TokenValidationParameters validationParameters)
         {
             if (string.IsNullOrWhiteSpace(token))
                 throw LogHelper.LogArgumentNullException(nameof(token));
@@ -615,7 +615,7 @@ namespace Microsoft.IdentityModel.Tokens.Jwt
             Validators.ValidateTokenReplay(expires, jwtToken.RawData, validationParameters);
             if (validationParameters.ValidateActor && !string.IsNullOrWhiteSpace(jwtToken.Actor))
             {
-                var actorValidationResult = await ValidateJWSAsync(jwtToken.Actor, validationParameters.ActorValidationParameters ?? validationParameters).ConfigureAwait(false);
+                var actorValidationResult = await ValidateAsync(jwtToken.Actor, validationParameters.ActorValidationParameters ?? validationParameters).ConfigureAwait(false);
             }
 
             Validators.ValidateIssuerSecurityKey(jwtToken.SigningKey, jwtToken, validationParameters);

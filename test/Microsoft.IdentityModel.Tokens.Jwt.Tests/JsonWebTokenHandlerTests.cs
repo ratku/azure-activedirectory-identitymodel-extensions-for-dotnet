@@ -71,7 +71,7 @@ namespace Microsoft.IdentityModel.Tokens.Jwt.Tests
                     CustomCryptoProvider = new AsyncCryptoProvider(KeyingMaterial.JsonWebKeyRsa256SigningCredentials.Key, KeyingMaterial.JsonWebKeyRsa256SigningCredentials.Algorithm, false)
                 }
             };
-            var tokenValidationResult = tokenHandler.ValidateJWSAsync(accessToken, tokenValidationParameters).Result;
+            var tokenValidationResult = tokenHandler.ValidateAsync(accessToken, tokenValidationParameters).Result;
             var jsonWebToken = tokenValidationResult.SecurityToken as JsonWebToken;
             var email = jsonWebToken.Payload.Value<string>(JwtRegisteredClaimNames.Email);
 
