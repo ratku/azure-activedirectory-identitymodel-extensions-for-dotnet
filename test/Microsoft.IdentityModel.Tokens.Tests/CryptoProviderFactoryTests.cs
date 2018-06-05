@@ -459,8 +459,11 @@ namespace Microsoft.IdentityModel.Tokens.Tests
             var context = TestUtilities.WriteHeader($"{this}.ReleaseSignatureProviders", theoryData);
             var cryptoProviderFactory = new CryptoProviderFactory();
             try
-            {
+            {   if (theoryData.CustomCryptoProvider != null)
+                    cryptoProviderFactory.CustomCryptoProvider = theoryData.CustomCryptoProvider;
                 cryptoProviderFactory.ReleaseSignatureProvider(theoryData.SigningSignatureProvider);
+                if (theoryData.CustomCryptoProvider != null && theoryData.SigningSignatureProvider != null && !((CustomCryptoProvider)theoryData.CustomCryptoProvider).ReleaseCalled)
+                    context.Diffs.Add("Release wasn't called on the CustomCryptoProvider.");
                 theoryData.ExpectedException.ProcessNoException(context);
             }
             catch (Exception ex)
@@ -477,11 +480,13 @@ namespace Microsoft.IdentityModel.Tokens.Tests
             {
                 var cache = new InMemoryCryptoProviderCache();
                 var asymmetricSignatureProvider = new CustomAsymmetricSignatureProvider(Default.AsymmetricSigningKey, Default.AsymmetricSigningAlgorithm, true) { ThrowOnDispose = new InvalidOperationException() };
+                var asymmetricSignatureProviderToDispose = new CustomAsymmetricSignatureProvider(Default.AsymmetricSigningKey, Default.AsymmetricSigningAlgorithm, true);
                 var symmetricSignatureProvider = new CustomSymmetricSignatureProvider(Default.SymmetricSigningKey256, ALG.HmacSha256, true) { ThrowOnDispose = new InvalidOperationException() };
                 var asymmetricSignatureProviderCached = new CustomAsymmetricSignatureProvider(Default.AsymmetricSigningKey, Default.AsymmetricSigningAlgorithm, true) { ThrowOnDispose = new InvalidOperationException() };
                 var symmetricSignatureProviderCached = new CustomSymmetricSignatureProvider(Default.SymmetricSigningKey256, ALG.HmacSha256, true) { ThrowOnDispose = new InvalidOperationException() };
                 cache.TryAdd(asymmetricSignatureProviderCached);
                 cache.TryAdd(symmetricSignatureProviderCached);
+                var customCryptoProvider = new CustomCryptoProvider();
 
                 var theoryData = new TheoryData<SignatureProviderTheoryData>
                 {
@@ -507,7 +512,27 @@ namespace Microsoft.IdentityModel.Tokens.Tests
                     {
                         SigningSignatureProvider = symmetricSignatureProviderCached,
                         TestId = "Release4"
+                    },
+                    new SignatureProviderTheoryData
+                    {
+                       CustomCryptoProvider = new CustomCryptoProvider(new string[] {"RS256"})
+                       {
+                           SignatureProvider = asymmetricSignatureProviderToDispose
+                       },
+                       SigningSignatureProvider = asymmetricSignatureProviderToDispose,
+                       TestId = "CustomCryptoProviderRelease"
+                    },
+                    new SignatureProviderTheoryData
+                    {
+                       ExpectedException = EE.ArgumentNullException(),
+                       CustomCryptoProvider = new CustomCryptoProvider(new string[] {"RS256"})
+                       {
+                           SignatureProvider = asymmetricSignatureProviderToDispose
+                       },
+                       SigningSignatureProvider = null,
+                       TestId = "CustomCryptoProviderRelease - SignatureProvider null"
                     }
+
                 };
 
                 return theoryData;

@@ -884,6 +884,8 @@ namespace Microsoft.IdentityModel.Tokens.Tests
         public byte[] Signature { get; set; }
 
         public bool VerifySpecifyingLength { get; set; }
+
+        public ICryptoProvider CustomCryptoProvider { get; set; }
     }
 }
 
